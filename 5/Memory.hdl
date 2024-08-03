@@ -1,0 +1,73 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/5/Memory.hdl
+/**
+ * The complete address space of the Hack computer's memory,
+ * including RAM and memory-mapped I/O. 
+ * The chip facilitates read and write operations, as follows:
+ *     Read:  out(t) = Memory[address(t)](t)
+ *     Write: if load(t-1) then Memory[address(t-1)](t) = in(t-1)
+ * In words: the chip always outputs the value stored at the memory 
+ * location specified by address. If load=1, the in value is loaded 
+ * into the memory location specified by address. This value becomes 
+ * available through the out output from the next time step onward.
+ * Address space rules:
+ * Only the upper 16K+8K+1 words of the Memory chip are used. 
+ * Access to address>0x6000 is invalid. Access to any address in 
+ * the range 0x4000-0x5FFF results in accessing the screen memory 
+ * map. Access to address 0x6000 results in accessing the keyboard 
+ * memory map. The behavior in these addresses is described in the Screen
+ * and Keyboard chip specifications given in the lectures and the book.
+ */
+CHIP Memory {
+    IN in[16], load, address[15];
+    OUT out[16];
+
+    PARTS:
+
+    /*
+     * Actually, a simple implementation is using DMux4Way16 with address[13..14] as sel.
+     * see: https://github.com/woai3c/nand2tetris/blob/master/05/Memory.hdl
+     */
+
+    // write keyboard in the beginning.
+    // otherwise, the simulator can not show the keyboard button
+    
+    Keyboard(out = outKeyboard);
+    Screen(in = inToScreen, load = loadToScreen, address = addressToScreen, out = outScreen);
+
+    // address < 0x6000: valid
+    // => x - y < 0
+    ALU(x[0..14] = address, x[15] = false,
+        y[0..12] = false, y[13..14] = true, y[15] = false,
+        zx = false, nx = true, zy = false,
+        ny = false, f = true, no = true,
+        zr = toKeyboard,
+        ng = valid);
+
+    // address < 0x4000: loadToRAM
+    // =>  x - y < 0
+    ALU(x[0..14] = address, x[15] = false,
+        y[0..13] = false, y[14] = true, y[15] = false,
+        zx = false, nx = true, zy = false,
+        ny = false, f = true, no = true,
+        out = addressMinus,
+        ng = toRAM);
+
+    Not(in = toRAM, out = notToRAM);
+    And(a = notToRAM, b = valid, out = toScreen);
+    
+    Mux(a = false, b = load, sel = toRAM, out = loadToRAM);
+    Mux16(a[0..15] = false, b = in, sel = toRAM, out = inToRAM);
+    Mux16(a[0..15] = false, b[0..14] = address, b[15] = false, sel = toRAM, out[0..13] = addressToRAM);
+
+    Mux(a = false, b = load, sel = toScreen, out = loadToScreen);
+    Mux16(a[0..15] = false, b = in, sel = toScreen, out = inToScreen);
+    Mux16(a[0..15] = false, b = addressMinus, sel = toScreen, out[0..12] = addressToScreen);
+
+    RAM16K(in = inToRAM, load = loadToRAM, address = addressToRAM, out = outRAM);
+    Mux16(a[0..15] = false, b = outRAM, sel = toRAM, out = out0);
+    Mux16(a = out0, b = outScreen, sel = toScreen, out = out1);
+    Mux16(a = out1, b = outKeyboard, sel = toKeyboard, out = out);
+}
